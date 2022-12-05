@@ -1,0 +1,16 @@
+{
+  "name": "charlando-lib",
+  "version": "1.0.0",
+  "description": "",
+  "main": "charlando.js",
+  "scripts": {
+    "compileCss": "sass scss:prod -w --no-source-map"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "minify": "^9.1.0",
+    "sass": "^1.56.1"
+  }
+}
