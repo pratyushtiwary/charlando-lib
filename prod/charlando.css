@@ -18,6 +18,8 @@
   position: absolute;
   bottom: 110%;
   max-width: 400px;
+  width: max-content;
+  text-align: left;
   right: 0%;
   overflow: hidden;
   scroll-behavior: smooth;

@@ -1,5 +1,5 @@
 (function () {
-  const api_url = "http://127.0.0.1:8000/api/v1/";
+  const api_url = "http://127.0.0.1:8000/bot/v1/";
 
   function XMLHttpFactories() {
     try {
@@ -29,6 +29,38 @@
     }
   }
 
+  function injectDataInURL(url, data) {
+    let final = url;
+    let dataKeys = Object.keys(data);
+    for (let i = 0; i < dataKeys.length; i++) {
+      const key = dataKeys[i];
+      final = final.replace(new RegExp("{" + key + "}", "g"), data[key]);
+    }
+    return final;
+  }
+
+  function getValueUsingPath(data, path) {
+    let final = data;
+
+    path = path.split(".");
+
+    let pathLength = path.length;
+
+    for (let i = 0; i < pathLength; i++) {
+      const e = path[i];
+      if (final[e]) {
+        final = final[e];
+      } else {
+        final = undefined;
+        break;
+      }
+    }
+
+    return final;
+  }
+
+  let initialData = undefined;
+
   function createXMLHTTPObject() {
     var xmlhttp = XMLHttpFactories();
     return xmlhttp;
@@ -39,8 +71,10 @@
     return Boolean(xmlHttpObj);
   }
 
-  function makeRequest(url, data, cb, err) {
-    url = api_url + url;
+  function makeRequest(url, data, cb, err, external = false) {
+    if (!external) {
+      url = api_url + url;
+    }
     const xmlHttpObj = createXMLHTTPObject();
     xmlHttpObj.addEventListener("load", function () {
       if (xmlHttpObj.readyState === 4 && xmlHttpObj.status === 200) {
@@ -65,7 +99,7 @@
     xmlHttpObj.addEventListener("error", function (e) {
       err && err(e);
     });
-    xmlHttpObj.open("POST", url);
+    xmlHttpObj.open(!external ? "POST" : "GET", url);
     xmlHttpObj.setRequestHeader("Content-Type", "application/json");
     xmlHttpObj.send(JSON.stringify(data));
   }
@@ -93,6 +127,9 @@
   class Chatbox extends Utils {
     constructor() {
       super();
+
+      this._returnResponse = false;
+      this._response = null;
     }
 
     set typing(is_typing) {
@@ -106,7 +143,7 @@
     }
 
     #onMessageSend(message) {
-      this.onsend && this.onsend(message);
+      this._onsend && this._onsend(message);
     }
 
     #loadElements(chatInstance) {
@@ -200,14 +237,15 @@
       chatInstance.appendChild(messageBox);
     }
 
-    _pushMessage(message, from) {
+    _pushMessage(message, from, returnResponse = false) {
       const chatbody = this.chatInstance.querySelector(".chatbody");
       const messageInput = this.chatInstance.querySelector(
         ".messageBox .messageInput"
       );
       const messageElem = this._createElement("div", ["message"]);
-
       if (from === "bot") {
+        this._returnResponse = returnResponse;
+        this._response = null;
         messageElem.style.backgroundColor = this.theme;
         const opacity = this._createElement("div", ["opacity"]);
         const span = this._createElement("span", []);
@@ -219,8 +257,16 @@
 
         messageElem.classList.add("bot");
       } else {
+        if (this._returnResponse === false) {
+          this._response = null;
+        }
         messageElem.innerText = message;
         messageElem.classList.add("self");
+        if (this._returnResponse && from !== "bot") {
+          this._returnResponse = false;
+          this._response = message;
+        }
+        this.#onMessageSend(message);
       }
       chatbody.appendChild(messageElem);
       messageInput.value = "";
@@ -257,29 +303,190 @@
 
   class CharLandoInstance extends Chatbox {
     #hiddenPopupMessages = 0;
+    #sendMessageTimeout = null;
     constructor(appKey) {
       super();
       this.appKey = appKey;
+      this.userActivityTimeout = null;
+      this.initialPromptShown = false;
 
       const self = this;
 
-      // makeRequest(
-      //   "init",
-      //   {
-      //     appKey: appKey,
-      //   },
-      //   (d) => {
-      //     const data = d.json();
-      //     self.#renderWidget();
-      //   },
-      //   (e) => {
-      //     if (e.error) {
-      //       throwError(e.error.msg);
-      //     }
-      //     throwError(e);
-      //   }
-      // );
-      self.#renderWidget();
+      makeRequest(
+        "init",
+        {
+          appKey: appKey,
+        },
+        (d) => {
+          const data = d.json();
+          self.#renderWidget();
+          initialData = data.success.data;
+
+          function resetUserActivityTimeout() {
+            self.#resetUserActivityTimeout();
+          }
+
+          window.addEventListener("mousemove", resetUserActivityTimeout);
+          window.addEventListener("scroll", resetUserActivityTimeout);
+          window.addEventListener("keydown", resetUserActivityTimeout);
+          window.addEventListener("resize", resetUserActivityTimeout);
+        },
+        (e) => {
+          if (e.error) {
+            throwError(e.error.msg);
+          }
+          throwError(e);
+        }
+      );
+    }
+
+    #handleDynamicResponse(response, haveUnknownValue = false) {
+      const self = this;
+      let knownValues = {};
+      let unknownValues = [];
+
+      if (!haveUnknownValue) {
+        // check if bot finds out value for any variable
+        Object.keys(response.prompts).forEach((e) => {
+          e = e.replace(/\{|\}/g, "");
+          if (response.variables[e]) {
+            knownValues[e] = response.variables[e];
+          } else {
+            unknownValues.push(e);
+          }
+        });
+      } else {
+        knownValues = self._data.knownValues;
+        unknownValues = self._data.unknownValues;
+
+        knownValues[unknownValues[0]] = response;
+
+        unknownValues = unknownValues.slice(1);
+      }
+
+      if (unknownValues.length > 0) {
+        // Ask from user for the unknown values
+        const message = response.prompts["{" + unknownValues[0] + "}"];
+        self._pushMessage(message, "bot", true);
+      }
+
+      if (!haveUnknownValue) {
+        self._data = {
+          knownValues,
+          unknownValues,
+          path: response.response.extras.path,
+          resp: response.response.extras.response,
+          endpoint: response.response.value,
+        };
+      } else {
+        self._data = {
+          ...self._data,
+          knownValues,
+          unknownValues,
+        };
+      }
+
+      // Make request to the endpoint
+      if (unknownValues.length === 0) {
+        const url = self._data.endpoint;
+        const endpoint = injectDataInURL(url, knownValues);
+        const path = self._data.path;
+        const resp = self._data.resp;
+        self._data = undefined;
+
+        makeRequest(
+          endpoint,
+          {},
+          (c) => {
+            const data = c.json();
+            let msg = getValueUsingPath(data, path);
+
+            msg = injectDataInURL(resp, {
+              response: msg,
+            });
+
+            self._pushMessage(msg, "bot");
+          },
+          (e) => {
+            console.log(e);
+          },
+          true
+        );
+      }
+    }
+
+    _getResponse(message) {
+      const self = this;
+      if (self._response) {
+        self.#handleDynamicResponse(self._response, true);
+        return;
+      }
+      makeRequest(
+        "chat",
+        {
+          appKey: this.appKey,
+          query: message,
+        },
+        (d) => {
+          const data = d.json();
+          const type = data.success.data.response.type;
+
+          if (type === "static") {
+            self._pushMessage(data.success.data.response.value, "bot");
+          }
+
+          if (type === "dynamic") {
+            self.#handleDynamicResponse(data.success.data);
+          }
+          self.typing = false;
+        },
+        (e) => {
+          self.typing = false;
+          console.log(e);
+        }
+      );
+    }
+
+    _onsend(message) {
+      const self = this;
+      clearTimeout(this.#sendMessageTimeout);
+      if (!self._pendingMessages) {
+        self._pendingMessages = [];
+      }
+      if (!self._response) {
+        self._pendingMessages.push(message);
+        self.typing = true;
+        self.#sendMessageTimeout = setTimeout(() => {
+          self._getResponse &&
+            self._getResponse(this._pendingMessages.join(" "));
+          self._pendingMessages = [];
+        }, 1500);
+      } else {
+        self._getResponse(self._response);
+      }
+    }
+
+    #resetUserActivityTimeout() {
+      const self = this;
+      const initialPromptShown = this.initialPromptShown;
+      const showMessagePopup = this._showMessagePopup;
+      function showInitialPrompt() {
+        if (initialPromptShown) {
+          return;
+        }
+        const bubble = document.querySelector(".cl.bubble");
+        if (initialData && !self.opened) {
+          showMessagePopup.call(self, initialData.response.value, bubble);
+          self.initialPromptShown = true;
+        }
+      }
+
+      clearTimeout(this.userActivityTimeout);
+      if (!initialPromptShown) {
+        self.userActivityTimeout = setTimeout(() => {
+          showInitialPrompt();
+        }, 2500);
+      }
     }
 
     get opened() {
@@ -298,7 +505,7 @@
       }
     }
 
-    #showMessagePopup(message, bubble) {
+    _showMessagePopup(message, bubble) {
       const messages = bubble.querySelector(".popups");
       const opacity = this._createElement("div", ["opacity"]);
       const span = this._createElement("span", []);
