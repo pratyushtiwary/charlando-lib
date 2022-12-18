@@ -101,6 +101,24 @@
     });
     xmlHttpObj.open(!external ? "POST" : "GET", url);
     xmlHttpObj.setRequestHeader("Content-Type", "application/json");
+    xmlHttpObj.addEventListener("loadend", function () {
+      if (xmlHttpObj.status !== 200) {
+        if (xmlHttpObj.status === 0) {
+          const status = document.querySelector(".cl.status");
+          if (status) {
+            status.querySelector("span").classList.remove("online");
+            status.querySelector("span").classList.add("offline");
+
+            status.querySelector("p").innerText = "Offline";
+          }
+        }
+        err &
+          err({
+            status: xmlHttpObj.status,
+            url: url,
+          });
+      }
+    });
     xmlHttpObj.send(JSON.stringify(data));
   }
 
@@ -183,11 +201,16 @@
       const status = this._createElement("span");
       const statusText = this._createElement("p");
 
+      status.classList.add("online");
+      statusText.innerText = "Online";
+
       setInterval(function () {
-        statusText.innerText = navigator.onLine ? "Online" : "Offline";
-        status.classList.remove(navigator.onLine ? "offline" : "online");
-        status.classList.add(navigator.onLine ? "online" : "offline");
-        if (!navigator.onLine) {
+        if (navigator.onLine) {
+          status.classList.remove("offline");
+          status.classList.add("online");
+          statusText.innerText = "Online";
+        }
+        if (status.classList.contains("offline")) {
           messageInput.disabled = true;
           messageSendBtn.disabled = true;
         } else {
@@ -237,6 +260,45 @@
       chatInstance.appendChild(messageBox);
     }
 
+    _renderWebView(data) {
+      const { site_name: title, description, url, image } = data;
+      const chatbody = this.chatInstance.querySelector(".chatbody");
+
+      const messageElem = this._createElement("a", ["message", "webview"]);
+
+      if (title) {
+        const web_title = this._createElement("h3", ["title"]);
+        web_title.innerText = title;
+        messageElem.appendChild(web_title);
+      }
+
+      if (description && title) {
+        const web_desc = this._createElement("p", ["description"]);
+        web_desc.innerText = description;
+        messageElem.appendChild(web_desc);
+      }
+
+      if (image && title) {
+        const web_img = this._createElement("div", ["image"]);
+        web_img.style.backgroundImage = "url(" + image + ")";
+        messageElem.appendChild(web_img);
+      }
+      const web_url = this._createElement("a", ["url"]);
+
+      web_url.href = url;
+      web_url.innerText = url;
+      web_url.target = "_blank";
+
+      messageElem.appendChild(web_url);
+
+      messageElem.href = url;
+      messageElem.target = "_blank";
+
+      chatbody.append(messageElem);
+
+      chatbody.scrollTo(0, chatbody.scrollHeight);
+    }
+
     _pushMessage(message, from, returnResponse = false) {
       const chatbody = this.chatInstance.querySelector(".chatbody");
       const messageInput = this.chatInstance.querySelector(
@@ -269,7 +331,10 @@
         this.#onMessageSend(message);
       }
       chatbody.appendChild(messageElem);
-      messageInput.value = "";
+
+      if (messageElem.innerText === messageInput.value) {
+        messageInput.value = "";
+      }
       chatbody.scrollTo(0, chatbody.scrollHeight);
     }
 
@@ -304,12 +369,14 @@
   class CharLandoInstance extends Chatbox {
     #hiddenPopupMessages = 0;
     #sendMessageTimeout = null;
+
     constructor(appKey) {
       super();
       this.appKey = appKey;
       this.userActivityTimeout = null;
       this.initialPromptShown = false;
 
+      this.netErrorMessage = "Unable to get data, make sure you are online.";
       const self = this;
 
       makeRequest(
@@ -321,6 +388,8 @@
           const data = d.json();
           self.#renderWidget();
           initialData = data.success.data;
+
+          self.fallback = data.success.data.fallback.value;
 
           function resetUserActivityTimeout() {
             self.#resetUserActivityTimeout();
@@ -388,6 +457,7 @@
 
       // Make request to the endpoint
       if (unknownValues.length === 0) {
+        self.typing = true;
         const url = self._data.endpoint;
         const endpoint = injectDataInURL(url, knownValues);
         const path = self._data.path;
@@ -398,6 +468,7 @@
           endpoint,
           {},
           (c) => {
+            self.typing = false;
             const data = c.json();
             let msg = getValueUsingPath(data, path);
 
@@ -408,7 +479,8 @@
             self._pushMessage(msg, "bot");
           },
           (e) => {
-            console.log(e);
+            self.typing = false;
+            self._pushMessage(self.netErrorMessage, "bot");
           },
           true
         );
@@ -438,11 +510,15 @@
           if (type === "dynamic") {
             self.#handleDynamicResponse(data.success.data);
           }
+
+          if (type === "embed") {
+            self._renderWebView(data.success.data.response.extras);
+          }
           self.typing = false;
         },
         (e) => {
           self.typing = false;
-          console.log(e);
+          self._pushMessage(self.netErrorMessage, "bot");
         }
       );
     }
