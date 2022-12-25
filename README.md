@@ -15,4 +15,5 @@ This repo contains js and css files which can be used to integrate `CharLando` o
 ## CDN
 
 CSS:- `https://cdn.jsdelivr.net/gh/pratyushtiwary/charlando-lib/prod/charlando.css`,
+
 JS:- `https://cdn.jsdelivr.net/gh/pratyushtiwary/charlando-lib/charlando.js`
