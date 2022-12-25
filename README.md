@@ -2,6 +2,8 @@
 
 This repo contains js and css files which can be used to integrate `CharLando` on your website.
 
+**Only works on https urls**
+
 ## Usage
 
 ```html
