@@ -571,6 +571,15 @@
       }
     }
 
+    remove() {
+      const bubble = document.querySelector(".cl.bubble");
+
+      if (bubble) {
+        bubble.remove();
+        clearTimeout(this.userActivityTimeout);
+      }
+    }
+
     get opened() {
       const chatbox = this.chatInstance?.classList?.contains("open");
 
