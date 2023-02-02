@@ -572,11 +572,24 @@
     }
 
     remove() {
+      const self = this;
       const bubble = document.querySelector(".cl.bubble");
 
       if (bubble) {
         bubble.remove();
         clearTimeout(this.userActivityTimeout);
+        function resetUserActivityTimeout() {
+          self.#resetUserActivityTimeout();
+        }
+
+        window.addEventListener(
+          "mousemove",
+          resetUserActivityTimeout
+        );
+        window.addEventListener("scroll", resetUserActivityTimeout);
+        window.addEventListener("keydown", resetUserActivityTimeout);
+        window.addEventListener("resize", resetUserActivityTimeout);
+
       }
     }
 
