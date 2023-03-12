@@ -29,12 +29,19 @@
     }
   }
 
+  function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); // $& means the whole matched string
+  }
+
   function injectDataInURL(url, data) {
     let final = url;
     let dataKeys = Object.keys(data);
     for (let i = 0; i < dataKeys.length; i++) {
       const key = dataKeys[i];
-      final = final.replace(new RegExp("{" + key + "}", "g"), data[key]);
+      final = final.replace(
+        new RegExp(escapeRegExp("{" + key + "}"), "g"),
+        encodeURIComponent(data[key])
+      );
     }
     return final;
   }
@@ -482,7 +489,7 @@
               response: msg,
             });
 
-            self._pushMessage(msg, "bot");
+            self._pushMessage(decodeURIComponent(msg), "bot");
           },
           (e) => {
             self.typing = false;
@@ -582,14 +589,10 @@
           self.#resetUserActivityTimeout();
         }
 
-        window.addEventListener(
-          "mousemove",
-          resetUserActivityTimeout
-        );
+        window.addEventListener("mousemove", resetUserActivityTimeout);
         window.addEventListener("scroll", resetUserActivityTimeout);
         window.addEventListener("keydown", resetUserActivityTimeout);
         window.addEventListener("resize", resetUserActivityTimeout);
-
       }
     }
 
