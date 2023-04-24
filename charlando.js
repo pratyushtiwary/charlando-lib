@@ -380,6 +380,7 @@
   class CharLandoInstance extends Chatbox {
     #hiddenPopupMessages = 0;
     #sendMessageTimeout = null;
+    #theme = "auto";
 
     constructor(appKey) {
       super();
@@ -397,8 +398,9 @@
         },
         (d) => {
           const data = d.json();
-          self.#renderWidget();
           initialData = data.success.data;
+          self.#theme = initialData.color;
+          self.#renderWidget();
 
           self.fallback = data.success.data.fallback.value;
 
@@ -603,12 +605,16 @@
     }
 
     get theme() {
-      // check if site has a theme
-      const theme = document.querySelector("meta[name='theme-color']");
-      if (theme) {
-        return theme.content;
+      if (this.#theme === "auto") {
+        // check if site has a theme
+        const theme = document.querySelector("meta[name='theme-color']");
+        if (theme) {
+          return theme.content;
+        } else {
+          return "#3DB54A";
+        }
       } else {
-        return "#3DB54A";
+        return this.#theme;
       }
     }
 
