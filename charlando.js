@@ -1,5 +1,5 @@
 (function () {
-  const api_url = "https://152.67.0.62/bot/v1/";
+  const api_url = "https://api.charlando.in/bot/v1/";
 
   function XMLHttpFactories() {
     try {
